@@ -91,8 +91,11 @@ def parse_name(data, offset):
     return ".".join(labels), end
 
 
-def parse_response(data):
-    """Parse a raw DNS message. Returns (tid, rcode, truncated, results)."""
+def parse_response(data, qtype=None):
+    """Parse a raw DNS message. Returns (tid, rcode, truncated, results).
+
+    Only answer records of `qtype` are returned: a CNAME in the answer chain
+    (alias -> target) must not show up as a bogus MX/TXT value."""
     resp_tid = struct.unpack(">H", data[0:2])[0]
     flags = struct.unpack(">H", data[2:4])[0]
     rcode = flags & 0x000F
@@ -108,7 +111,9 @@ def parse_response(data):
         rtype, rclass, ttl, rdlen = struct.unpack(">HHIH", data[offset:offset + 10])
         offset += 10
         rdata = data[offset:offset + rdlen]
-        if rtype == TYPE_TXT:
+        if qtype is not None and rtype != qtype:
+            pass
+        elif rtype == TYPE_TXT:
             txt = b""
             p = 0
             while p < len(rdata):
@@ -128,11 +133,27 @@ def parse_response(data):
     return resp_tid, rcode, truncated, results
 
 
+def _split_server(server):
+    """'1.1.1.1' -> ('1.1.1.1', 53); '127.0.0.1:5353' -> ('127.0.0.1', 5353)."""
+    if server.count(":") == 1:
+        host, port = server.split(":")
+        return host, int(port)
+    if server.startswith("[") and "]:" in server:
+        host, port = server[1:].split("]:")
+        return host, int(port)
+    return server.strip("[]"), 53
+
+
+def _family(host):
+    return socket.AF_INET6 if ":" in host else socket.AF_INET
+
+
 def _query_udp(server, packet):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    host, port = _split_server(server)
+    sock = socket.socket(_family(host), socket.SOCK_DGRAM)
     try:
         sock.settimeout(TIMEOUT)
-        sock.sendto(packet, (server, 53))
+        sock.sendto(packet, (host, port))
         data, _ = sock.recvfrom(65535)
         return data
     finally:
@@ -140,10 +161,11 @@ def _query_udp(server, packet):
 
 
 def _query_tcp(server, packet):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    host, port = _split_server(server)
+    sock = socket.socket(_family(host), socket.SOCK_STREAM)
     try:
         sock.settimeout(TIMEOUT)
-        sock.connect((server, 53))
+        sock.connect((host, port))
         sock.sendall(struct.pack(">H", len(packet)) + packet)
         length_prefix = _recv_exact(sock, 2)
         if length_prefix is None:
@@ -166,16 +188,23 @@ def _recv_exact(sock, n):
     return b"".join(chunks)
 
 
+_DEAD_SERVERS = set()
+
+
 def dns_query(qname, qtype, servers=None):
     servers = servers or DNS_SERVERS
+    # A resolver that timed out/refused once is skipped for the rest of the
+    # run (unless every resolver is dead) -- otherwise one blocked resolver
+    # costs a full TIMEOUT on each of the ~25 queries per domain.
+    live = [s for s in servers if s not in _DEAD_SERVERS] or list(servers)
     last_err = None
-    for server in servers:
+    for server in live:
         try:
             tid, packet = build_query(qname, qtype, edns=True)
             data = _query_udp(server, packet)
             if data is None:
                 continue
-            resp_tid, rcode, truncated, results = parse_response(data)
+            resp_tid, rcode, truncated, results = parse_response(data, qtype)
             if resp_tid != tid:
                 continue
             if truncated:
@@ -188,37 +217,62 @@ def dns_query(qname, qtype, servers=None):
                     last_err = e
                     tcp_data = None
                 if tcp_data:
-                    tcp_tid, tcp_rcode, _, tcp_results = parse_response(tcp_data)
+                    tcp_tid, tcp_rcode, _, tcp_results = parse_response(tcp_data, qtype)
                     if tcp_tid == tid:
                         rcode, results = tcp_rcode, tcp_results
-            if rcode == 0 or results:
+            if rcode in (0, 3) or results:
+                # NOERROR or NXDOMAIN is an authoritative answer -- asking the
+                # next resolver would only repeat it.
                 return results
         except (socket.timeout, OSError) as e:
             last_err = e
+            _DEAD_SERVERS.add(server)
             continue
     if last_err:
         return []
     return []
 
 
+def _spf_terms(record):
+    """Split an SPF record into (qualifier, mechanism, value) terms (RFC 7208 s4.6)."""
+    terms = []
+    for tok in record.split()[1:]:
+        if "=" in tok.split(":", 1)[0]:
+            continue  # modifier (redirect=, exp=)
+        qualifier = "+"
+        if tok[:1] in "+-~?":
+            qualifier, tok = tok[0], tok[1:]
+        name, _, value = tok.partition(":")
+        name = name.split("/", 1)[0].lower()
+        terms.append((qualifier, name, value))
+    return terms
+
+
 def check_spf(domain):
     txts = dns_query(domain, TYPE_TXT)
-    spf_records = [t for t in txts if t.lower().startswith("v=spf1")]
+    spf_records = [t for t in txts if t.lower() == "v=spf1" or t.lower().startswith("v=spf1 ")]
     issues = []
     if not spf_records:
         return {"present": False, "records": [], "issues": ["No SPF record found (v=spf1 TXT)"]}
     if len(spf_records) > 1:
         issues.append("Multiple SPF records found (%d); RFC 7208 permits only one -- causes PermError in strict validators" % len(spf_records))
     record = spf_records[0]
-    if "+all" in record:
-        issues.append("SPF uses '+all' -- allows ANY host to send as this domain (critical misconfiguration)")
-    elif "?all" in record:
-        issues.append("SPF uses '?all' (neutral) -- provides no real protection")
-    elif "-all" not in record and "~all" not in record:
+    terms = _spf_terms(record)
+    all_terms = [q for q, name, _ in terms if name == "all"]
+    has_redirect = any(t.lower().startswith("redirect=") for t in record.split()[1:])
+    if all_terms:
+        q = all_terms[0]
+        if q == "+":
+            issues.append("SPF uses '+all' (or a bare 'all', which means the same) -- allows ANY host to send as this domain (critical misconfiguration)")
+        elif q == "?":
+            issues.append("SPF uses '?all' (neutral) -- provides no real protection")
+        elif q == "~":
+            issues.append("SPF uses '~all' (softfail) -- consider '-all' (hardfail) once confident in the record")
+    elif not has_redirect:
         issues.append("SPF has no 'all' mechanism -- undefined/permissive behavior for non-matching senders")
-    elif "~all" in record:
-        issues.append("SPF uses '~all' (softfail) -- consider '-all' (hardfail) once confident in the record")
-    if "include:" not in record and "a" not in record and "mx" not in record and "ip4:" not in record and "ip6:" not in record:
+    senders = [name for _, name, _ in terms if name in ("include", "a", "mx", "ip4", "ip6", "exists", "ptr")]
+    null_record = terms == [("-", "all", "")]  # "v=spf1 -all": domain deliberately sends no mail
+    if not senders and not has_redirect and not null_record:
         issues.append("SPF record has no include/a/mx/ip4/ip6 mechanisms -- likely won't authorize any real sender")
     return {"present": True, "records": spf_records, "issues": issues}
 
@@ -229,6 +283,8 @@ def check_dmarc(domain):
     issues = []
     if not dmarc_records:
         return {"present": False, "records": [], "issues": ["No DMARC record found (_dmarc.<domain> TXT v=DMARC1)"]}
+    if len(dmarc_records) > 1:
+        issues.append("Multiple DMARC records found (%d); RFC 7489 says receivers then ignore DMARC entirely" % len(dmarc_records))
     record = dmarc_records[0]
     fields = {}
     for part in record.split(";"):
@@ -278,12 +334,12 @@ def check_mx(domain):
     return {"records": sorted(mx), "issues": issues}
 
 
-def audit_domain(domain):
+def audit_domain(domain, selectors=None):
     result = {"domain": domain, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())}
     result["mx"] = check_mx(domain)
     result["spf"] = check_spf(domain)
     result["dmarc"] = check_dmarc(domain)
-    result["dkim"] = check_dkim(domain)
+    result["dkim"] = check_dkim(domain, selectors)
     all_issues = (
         result["mx"]["issues"] + result["spf"]["issues"] +
         result["dmarc"]["issues"] + result["dkim"]["issues"]
@@ -377,20 +433,20 @@ def main():
     ap.add_argument("--json", action="store_true", help="Output JSON instead of text")
     ap.add_argument("--html", metavar="FILE", help="Write HTML report to FILE")
     ap.add_argument("--selectors", metavar="SEL", help="Comma-separated extra DKIM selectors to try")
+    ap.add_argument("--resolver", metavar="IP[:PORT]", action="append",
+                    help="DNS resolver to query instead of 1.1.1.1/8.8.8.8/9.9.9.9 (repeatable, "
+                         "e.g. your internal resolver or 127.0.0.1:5353)")
     args = ap.parse_args()
+
+    if args.resolver:
+        DNS_SERVERS[:] = [r.strip() for item in args.resolver for r in item.split(",") if r.strip()]
 
     selectors = COMMON_DKIM_SELECTORS
     if args.selectors:
-        selectors = list(dict.fromkeys(selectors + args.selectors.split(",")))
+        extra = [s.strip() for s in args.selectors.split(",") if s.strip()]
+        selectors = list(dict.fromkeys(selectors + extra))
 
-    results = []
-    for domain in args.domains:
-        r = audit_domain(domain)
-        if args.selectors:
-            r["dkim"] = check_dkim(domain, selectors)
-            r["all_issues"] = r["mx"]["issues"] + r["spf"]["issues"] + r["dmarc"]["issues"] + r["dkim"]["issues"]
-            r["issue_count"] = len(r["all_issues"])
-        results.append(r)
+    results = [audit_domain(domain.strip().rstrip("."), selectors) for domain in args.domains]
 
     if args.json:
         print(json.dumps(results, indent=2))

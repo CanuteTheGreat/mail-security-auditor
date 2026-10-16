@@ -33,6 +33,9 @@ python3 mail_audit.py --html report.html example.com
 
 # Try extra DKIM selectors beyond the built-in common list
 python3 mail_audit.py --selectors myselector,anotherone example.com
+
+# Use your own resolver(s) instead of the public ones (repeatable, IP[:PORT])
+python3 mail_audit.py --resolver 10.0.0.53 example.com
 ```
 
 Exit code is `1` if any audited domain has 3+ issues (useful for CI gating),
@@ -42,10 +45,12 @@ Exit code is `1` if any audited domain has 3+ issues (useful for CI gating),
 
 - **MX** — records present and resolvable (no MX = can't receive mail, may be intentional)
 - **SPF** — present, single record (RFC 7208 only allows one), not `+all`
-  (wide open), has a real `-all`/`~all` closing mechanism, has at least one
-  real authorization mechanism (`include:`/`a`/`mx`/`ip4:`/`ip6:`)
-- **DMARC** — present, policy strength (`none` vs `quarantine` vs `reject`),
-  `rua` aggregate-report address configured, `pct=100`
+  or a bare `all` (both wide open), has a real `-all`/`~all` closing mechanism
+  (or a `redirect=`), has at least one real authorization mechanism
+  (`include:`/`a`/`mx`/`ip4:`/`ip6:`/`exists:`) — `v=spf1 -all` ("this domain
+  sends no mail") is accepted as-is
+- **DMARC** — present, exactly one record, policy strength (`none` vs
+  `quarantine` vs `reject`), `rua` aggregate-report address configured, `pct=100`
 - **DKIM** — checks ~19 common selectors (Google Workspace, Microsoft 365,
   Mailgun, SendGrid, Mandrill, ProtonMail, generic `default`/`selector1`/`s1`,
   etc.) — a miss here only means the common selectors weren't found, not that
@@ -53,8 +58,17 @@ Exit code is `1` if any audited domain has 3+ issues (useful for CI gating),
 
 ## Requirements
 
-Python 3.7+, stdlib only. No pip install needed. Outbound UDP/53 to a public
-resolver (falls back through 1.1.1.1 → 8.8.8.8 → 9.9.9.9).
+Python 3.7+, stdlib only. No pip install needed. Outbound UDP/53 (TCP/53 for
+oversized answers) to a public resolver (falls back through 1.1.1.1 → 8.8.8.8
+→ 9.9.9.9; a resolver that doesn't answer is skipped for the rest of the run),
+or to whatever you pass with `--resolver`.
+
+## Tests
+
+`tests/` runs every check against a real DNS server (dnsmasq) serving good
+and broken records, plus one live query through the default public
+resolvers, on Python 3.7 and current Python in Forgejo CI:
+`sh ci/run-tests.sh 3.13` reproduces it locally (needs docker).
 
 ## License
 
