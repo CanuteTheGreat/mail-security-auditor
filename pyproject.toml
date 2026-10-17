@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mail-security-auditor"
+dynamic = ["version"]
+description = "Audit a domain's SPF (10-lookup limit), DKIM, DMARC, MTA-STS, TLS-RPT, BIMI and MX email security"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.7"
+authors = [{ name = "Errant Solutions", email = "hello@errant.solutions" }]
+keywords = ["spf", "dkim", "dmarc", "mta-sts", "email", "dns", "security"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://errant.solutions/tools/mail-security-auditor.html"
+Source = "https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor"
+Changelog = "https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor/src/branch/main/CHANGELOG.md"
+Releases = "https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor/releases"
+
+[project.scripts]
+mail-security-auditor = "mail_audit:main"
+
+[tool.hatch.version]
+path = "mail_audit.py"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["mail_audit.py"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["mail_audit.py", "README.md", "LICENSE", "CHANGELOG.md", "tests"]
