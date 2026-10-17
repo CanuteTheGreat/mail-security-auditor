@@ -1,0 +1,246 @@
+{
+ "offline": false,
+ "optional_imports": [],
+ "hidden_options": [
+  "--https-port"
+ ],
+ "claims": [
+  {
+   "id": "spf",
+   "text": "**SPF** \u2014 present, exactly one record (RFC 7208)",
+   "tests": [
+    "tests/test_mail_audit.py::TestSpf::test_bare_all_means_pass_all",
+    "tests/test_mail_audit.py::TestSpf::test_plus_all",
+    "tests/test_mail_audit.py::TestSpf::test_softfail",
+    "tests/test_mail_audit.py::TestSpf::test_neutral",
+    "tests/test_mail_audit.py::TestSpf::test_no_all",
+    "tests/test_mail_audit.py::TestSpf::test_no_sender_mechanisms",
+    "tests/test_mail_audit.py::TestSpf::test_null_record_is_clean",
+    "tests/test_mail_audit.py::TestSpf::test_redirect_counts_as_complete",
+    "tests/test_mail_audit.py::TestSpf::test_multiple_spf_records",
+    "tests/test_mail_audit.py::TestSpf::test_missing_spf",
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_permerror_verdicts_match"
+   ]
+  },
+  {
+   "id": "spf-lookups",
+   "text": "at most 10 DNS lookups",
+   "tests": [
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_good_domain_counts",
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_over_the_limit_is_high",
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_nested_includes_are_counted_across_the_tree",
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_near_the_limit_is_low",
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_redirect_counts_a_lookup",
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_lookup_counts_match_when_evaluation_completes",
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_over_limit_trees_are_reported_with_the_count",
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_corpus_has_both_outcomes"
+   ]
+  },
+  {
+   "id": "spf-void",
+   "text": "at most 2 void lookups",
+   "tests": [
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_void_lookups",
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_permerror_verdicts_match"
+   ]
+  },
+  {
+   "id": "spf-includes",
+   "text": "includes/redirects whose target has no SPF record",
+   "tests": [
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_include_without_spf_record_and_loops",
+    "tests/test_mail_audit.py::TestSpfLookupLimit::test_ptr_mx_limit_and_macros",
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_permerror_verdicts_match"
+   ]
+  },
+  {
+   "id": "dmarc",
+   "text": "**DMARC** \u2014 present, exactly one record",
+   "tests": [
+    "tests/test_mail_audit.py::TestDmarc::test_policies",
+    "tests/test_mail_audit.py::TestDmarc::test_missing_rua",
+    "tests/test_mail_audit.py::TestDmarc::test_pct",
+    "tests/test_mail_audit.py::TestDmarc::test_multiple_records",
+    "tests/test_mail_audit.py::TestDmarc::test_missing",
+    "tests/test_mail_audit.py::TestDmarcDepth::test_subdomain_policy_and_alignment_tags",
+    "tests/test_mail_audit.py::TestDmarcDepth::test_external_report_destinations_must_be_authorized",
+    "tests/test_accuracy.py::TestDmarcCorpus::test_known_good_records_are_clean",
+    "tests/test_accuracy.py::TestDmarcCorpus::test_known_bad_records_exact_findings"
+   ]
+  },
+  {
+   "id": "dkim",
+   "text": "**DKIM** \u2014 ~19 common selectors",
+   "tests": [
+    "tests/test_mail_audit.py::TestDkimAndMx::test_custom_selector_only_found_with_selectors_option",
+    "tests/test_mail_audit.py::TestDkimKeys::test_key_sizes",
+    "tests/test_mail_audit.py::TestDkimKeys::test_revoked_and_garbage_keys",
+    "tests/test_accuracy.py::TestDkimKeySizeAgainstOpenssl::test_key_bits_and_severity"
+   ],
+   "flags": [
+    "--selectors"
+   ]
+  },
+  {
+   "id": "mx",
+   "text": "**MX** \u2014 present",
+   "tests": [
+    "tests/test_mail_audit.py::TestHealthyDomain::test_good_domain_has_no_issues",
+    "tests/test_mail_audit.py::TestHealthyDomain::test_cname_chain_does_not_leak_into_mx_list",
+    "tests/test_mail_audit.py::TestDkimAndMx::test_missing_everything_fails_exit_code"
+   ]
+  },
+  {
+   "id": "mta-sts",
+   "text": "**MTA-STS** \u2014 `_mta-sts` TXT",
+   "tests": [
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_good_policy",
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_uncovered_mx_and_short_max_age",
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_unfetchable_policy_testing_mode_and_missing_id",
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_missing_mta_sts_and_tls_rpt_are_low"
+   ]
+  },
+  {
+   "id": "tls-rpt",
+   "text": "**TLS-RPT** \u2014 `_smtp._tls` TXT with a valid `rua=`",
+   "tests": [
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_good_policy",
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_unfetchable_policy_testing_mode_and_missing_id",
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_missing_mta_sts_and_tls_rpt_are_low"
+   ]
+  },
+  {
+   "id": "bimi",
+   "text": "**BIMI** \u2014 `default._bimi` record",
+   "tests": [
+    "tests/test_mail_audit.py::TestMtaStsTlsRptBimi::test_bimi"
+   ]
+  },
+  {
+   "id": "smtp",
+   "text": "**MX STARTTLS** (`--smtp`)",
+   "tests": [
+    "tests/test_mail_audit.py::TestSmtpStarttls::test_starttls_with_valid_certificate",
+    "tests/test_mail_audit.py::TestSmtpStarttls::test_certificate_not_matching_host",
+    "tests/test_mail_audit.py::TestSmtpStarttls::test_no_starttls_is_high",
+    "tests/test_mail_audit.py::TestSmtpStarttls::test_unreachable_port_is_info_and_smtp_is_opt_in"
+   ],
+   "flags": [
+    "--smtp"
+   ]
+  },
+  {
+   "id": "raw-dns",
+   "text": "it implements a minimal raw\nUDP DNS client (RFC 1035) in stdlib Python",
+   "tests": [
+    "tests/test_mail_audit.py::TestDkimAndMx::test_oversized_txt_comes_back_whole_over_tcp",
+    "tests/test_mail_audit.py::TestCli::test_default_public_resolvers"
+   ]
+  },
+  {
+   "id": "resolvers",
+   "text": "falls back through 1.1.1.1 \u2192 8.8.8.8\n\u2192 9.9.9.9",
+   "tests": [
+    "tests/test_mail_audit.py::TestCli::test_resolver_fallback",
+    "tests/test_mail_audit.py::TestCli::test_default_public_resolvers"
+   ],
+   "flags": [
+    "--resolver"
+   ]
+  },
+  {
+   "id": "json",
+   "text": "mail-security-auditor --json example.com",
+   "tests": [
+    "tests/test_mail_audit.py::TestHealthyDomain::test_good_domain_has_no_issues",
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_permerror_verdicts_match"
+   ],
+   "flags": [
+    "--json"
+   ]
+  },
+  {
+   "id": "html",
+   "text": "mail-security-auditor --html report.html example.com",
+   "tests": [
+    "tests/test_mail_audit.py::TestCli::test_html_report"
+   ],
+   "flags": [
+    "--html"
+   ]
+  },
+  {
+   "id": "multi",
+   "text": "mail-security-auditor example.com example.org",
+   "tests": [
+    "tests/test_mail_audit.py::TestCli::test_text_report_multiple_domains"
+   ]
+  },
+  {
+   "id": "exit-codes",
+   "text": "Exit codes (same convention as every Errant Solutions tool)",
+   "tests": [
+    "tests/test_mail_audit.py::TestCli::test_fail_on_gates",
+    "tests/test_mail_audit.py::TestDkimAndMx::test_missing_everything_fails_exit_code",
+    "tests/test_mail_audit.py::TestCli::test_help"
+   ],
+   "flags": [
+    "--fail-on"
+   ]
+  },
+  {
+   "id": "stdlib-only",
+   "text": "A single-file, zero-dependency Python 3 tool",
+   "tests": [
+    "tests/test_claims.py::TestClaims::test_stdlib_only"
+   ]
+  },
+  {
+   "id": "install-pipx",
+   "text": "pipx install git+https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor.git",
+   "tests": [
+    "ci/install-channels.sh#pipx install -q \"git+$FORGEJO/CanuteTheGreat/$REPO.git\"",
+    ".forgejo/workflows/nightly.yml#ci/install-channels.sh"
+   ]
+  },
+  {
+   "id": "install-homebrew",
+   "text": "brew install canutethegreat/errant-tools/mail-security-auditor",
+   "tests": [
+    "repo:homebrew-errant-tools/Formula/mail-security-auditor.rb#test do",
+    "repo:homebrew-errant-tools/.forgejo/workflows/test.yml#ci/run-tests.sh"
+   ]
+  },
+  {
+   "id": "install-scoop",
+   "text": "scoop install errant-tools/mail-security-auditor",
+   "tests": [
+    "repo:scoop-errant-tools/bucket/mail-security-auditor.json#\"bin\"",
+    "repo:scoop-errant-tools/.forgejo/workflows/test.yml#ci/run-tests.sh"
+   ]
+  },
+  {
+   "id": "install-download",
+   "text": "https://errant.solutions/downloads/mail_audit.py",
+   "tests": [
+    "ci/install-channels.sh#https://errant.solutions/downloads/$FILE"
+   ]
+  },
+  {
+   "id": "release-assets",
+   "text": "`SHA256SUMS` file",
+   "tests": [
+    "ci/install-channels.sh#sha256sum -c SHA256SUMS",
+    "ci/release.py#SHA256SUMS"
+   ]
+  },
+  {
+   "id": "python-versions",
+   "text": "Python 3.7+",
+   "tests": [
+    ".forgejo/workflows/test.yml#python: [\"3.7\"",
+    ".forgejo/workflows/nightly.yml#python: [\"3.7\""
+   ]
+  }
+ ]
+}

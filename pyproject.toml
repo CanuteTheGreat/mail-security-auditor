@@ -40,4 +40,11 @@ path = "mail_audit.py"
 only-include = ["mail_audit.py"]
 
 [tool.hatch.build.targets.sdist]
-only-include = ["mail_audit.py", "README.md", "LICENSE", "CHANGELOG.md", "tests"]
+only-include = ["mail_audit.py", "README.md", "LICENSE", "CHANGELOG.md", "tests", "claims.json"]
+
+[tool.mutmut]
+# ci/mutation.sh (nightly workflow)
+source_paths = ["mail_audit.py"]
+pytest_add_cli_args_test_selection = ["tests/"]
+also_copy = ["claims.json", "ci", "README.md", "CHANGELOG.md"]
+
