@@ -400,6 +400,20 @@ class TestCli(unittest.TestCase):
         self.assertIn("sev-high", page)
         self.assertIn("No DMARC record found", page)
 
+    def test_html_clean_domain_is_not_styled_as_a_finding(self):
+        # A clean domain's "None found" line must not be red like a finding.
+        out = os.path.join(TMP, "clean.html")
+        run("--resolver", RESOLVER, "--html", out, "good.test", "nothing.test")
+        with open(out) as f:
+            page = f.read()
+        cards = {c.split("</h2>")[0]: c for c in page.split("<h2>")[1:]}
+        self.assertIn('<li class="ok">None found</li>', cards["good.test"])
+        self.assertNotIn('class="ok"', cards["nothing.test"])  # real findings keep the finding style
+        self.assertIn("<li><b>HIGH</b>", cards["nothing.test"])
+        self.assertIn(".issues li{font-size:0.88rem;color:#fca5a5", page)
+        self.assertIn(".issues li.ok{color:#86efac}", page)
+        self.assertGreater(page.index(".issues li.ok{"), page.index(".issues li{"))
+
     def test_resolver_fallback(self):
         # 192.0.2.1 (TEST-NET-1) never answers: the tool must fall through to
         # the next resolver and stop waiting on the dead one after the first timeout.

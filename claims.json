@@ -163,7 +163,8 @@
    "id": "html",
    "text": "mail-security-auditor --html report.html example.com",
    "tests": [
-    "tests/test_mail_audit.py::TestCli::test_html_report"
+    "tests/test_mail_audit.py::TestCli::test_html_report",
+    "tests/test_mail_audit.py::TestCli::test_html_clean_domain_is_not_styled_as_a_finding"
    ],
    "flags": [
     "--html"

@@ -2,6 +2,10 @@
 
 All notable changes. Versions are git tags; each tag has a Forgejo release with checksums.
 
+## 1.2.1 - 2026-10-19
+
+- HTML report: a clean domain's "None found" line is shown in green, no longer in red like a finding.
+
 ## 1.2.0 - 2026-10-16
 
 - **SPF 10-DNS-lookup limit** (RFC 7208 4.6.4): every include/a/mx/ptr/exists/redirect is counted across the

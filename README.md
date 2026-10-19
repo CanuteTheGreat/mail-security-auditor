@@ -20,7 +20,7 @@ straight to public resolvers 1.1.1.1 / 8.8.8.8 / 9.9.9.9).
 
 ```sh
 pipx install git+https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor.git        # latest release branch; puts `mail-security-auditor` on PATH
-pipx install git+https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor.git@v1.2.0  # a pinned release
+pipx install git+https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor.git@v1.2.1  # a pinned release
 brew install canutethegreat/errant-tools/mail-security-auditor   # after: brew tap canutethegreat/errant-tools https://git.canutethegreat.com/CanuteTheGreat/homebrew-errant-tools
 scoop install errant-tools/mail-security-auditor                 # after: scoop bucket add errant-tools https://git.canutethegreat.com/CanuteTheGreat/scoop-errant-tools
 ```
