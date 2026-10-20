@@ -1,7 +1,7 @@
 """End-to-end tests for mail_audit.py against real DNS, HTTPS and SMTP servers.
 
 A real dnsmasq instance (installed by ci/setup.sh) serves a test zone on
-127.0.0.1:5353 with deliberately good and broken SPF/DKIM/DMARC/MX/MTA-STS/
+a free port on 127.0.0.1 with deliberately good and broken SPF/DKIM/DMARC/MX/MTA-STS/
 TLS-RPT/BIMI records, and the tool is run as a subprocess with --resolver
 pointing at it -- the same raw UDP/TCP DNS code path it uses against public
 resolvers. MTA-STS policies and BIMI logos come from a real local HTTPS server
@@ -25,8 +25,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(os.path.dirname(HERE), "mail_audit.py")
-PORT = 5353
-RESOLVER = f"127.0.0.1:{PORT}"
+PORT = None        # picked free in setUpModule (free_dns_port)
+RESOLVER = None
 # ~750 bytes of TXT; the server caps UDP answers at 512 bytes (edns-packet-max) so
 # this only arrives whole through the TC-bit -> TCP retry path.
 BIG_SEGMENTS = ["v=DKIM1; k=rsa; p=" + "A" * 230] + ["B" * 250] * 2
@@ -208,8 +208,42 @@ class SmtpServer(threading.Thread):
             conn.close()
 
 
+def free_dns_port():
+    """A port on 127.0.0.1 free right now for both UDP and TCP (dnsmasq binds both).
+
+    Never a fixed port: mutation testing runs this module in several processes at once (mutmut
+    --max-children). With a fixed port the second dnsmasq could not bind and that process's tests
+    queried the FIRST process's dnsmasq - another corpus (other DKIM keys) that could be torn down
+    mid-test - so mutants were killed or kept at random instead of by what the tool does."""
+    for _ in range(50):
+        u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        t = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            u.bind(("127.0.0.1", 0))
+            port = u.getsockname()[1]
+            t.bind(("127.0.0.1", port))
+            return port
+        except OSError:
+            continue
+        finally:
+            u.close()
+            t.close()
+    raise RuntimeError("no free UDP+TCP port on 127.0.0.1")
+
+
+def dnsmasq_lost_bind(proc, logpath):
+    """True when our dnsmasq exited because a parallel run took its port first (try another)."""
+    if proc.poll() is None:
+        return False
+    with open(logpath) as f:
+        log = f.read()
+    if "Address already in use" in log or "address in use" in log.lower():
+        return True
+    raise RuntimeError("dnsmasq exited with %s:\n%s" % (proc.returncode, log))
+
+
 def setUpModule():
-    global DNSMASQ, TMP, CERT, HTTPS, SMTP_OK, SMTP_PLAIN
+    global DNSMASQ, TMP, CERT, HTTPS, SMTP_OK, SMTP_PLAIN, PORT, RESOLVER
     TMP = tempfile.mkdtemp()
     CERT, key = os.path.join(TMP, "cert.pem"), os.path.join(TMP, "key.pem")
     san = ",".join("DNS:" + h for h in HTTPS_HOSTS)
@@ -226,22 +260,32 @@ def setUpModule():
     SMTP_PLAIN.start()
 
     conf = os.path.join(TMP, "dnsmasq.conf")
-    with open(conf, "w") as f:
-        f.write("\n".join([f"port={PORT}", "listen-address=127.0.0.1", "bind-interfaces", "no-resolv",
-                           "no-hosts", "local=/test/", "edns-packet-max=512"] + records()) + "\n")
+    logpath = os.path.join(TMP, "dnsmasq.log")
     binary = shutil.which("dnsmasq") or "/usr/sbin/dnsmasq"
-    log = open(os.path.join(TMP, "dnsmasq.log"), "w")  # a pipe would fill up and stall dnsmasq
-    DNSMASQ = subprocess.Popen([binary, "-k", f"--conf-file={conf}"], stdout=log, stderr=subprocess.STDOUT)
     p = None
-    for _ in range(50):
-        if DNSMASQ.poll() is not None:
-            break
-        p = run("--resolver", RESOLVER, "--json", "good.test")
-        if p.returncode == 0 and json.loads(p.stdout)[0]["spf"]["present"]:
-            return
-        time.sleep(0.1)
-    with open(os.path.join(TMP, "dnsmasq.log")) as f:
-        raise RuntimeError("dnsmasq did not come up:\n" + f.read() + "\n" + (p.stdout + p.stderr if p else ""))
+    for _ in range(10):
+        PORT = free_dns_port()
+        RESOLVER = f"127.0.0.1:{PORT}"
+        with open(conf, "w") as f:
+            f.write("\n".join([f"port={PORT}", "listen-address=127.0.0.1", "bind-interfaces", "no-resolv",
+                               "no-hosts", "local=/test/", "edns-packet-max=512"] + records()) + "\n")
+        log = open(logpath, "w")  # a pipe would fill up and stall dnsmasq
+        DNSMASQ = subprocess.Popen([binary, "-k", f"--conf-file={conf}"], stdout=log, stderr=subprocess.STDOUT)
+        for _ in range(50):
+            if dnsmasq_lost_bind(DNSMASQ, logpath):
+                break
+            p = run("--resolver", RESOLVER, "--json", "good.test")
+            if p.returncode == 0 and json.loads(p.stdout)[0]["spf"]["present"]:
+                # answered: only OUR dnsmasq can hold the port if it is still alive
+                time.sleep(0.2)
+                if not dnsmasq_lost_bind(DNSMASQ, logpath):
+                    return
+                break
+            time.sleep(0.1)
+        else:
+            with open(logpath) as f:
+                raise RuntimeError("dnsmasq did not come up:\n" + f.read() + "\n" + (p.stdout + p.stderr if p else ""))
+    raise RuntimeError("dnsmasq could not bind a port in 10 attempts")
 
 
 def tearDownModule():

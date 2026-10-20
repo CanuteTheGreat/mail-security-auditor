@@ -18,6 +18,7 @@ import os
 import random
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -29,8 +30,8 @@ import spf
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(os.path.dirname(HERE), "mail_audit.py")
-PORT = 5354
-RESOLVER = "127.0.0.1:%d" % PORT
+PORT = None        # picked free in setUpModule (free_dns_port)
+RESOLVER = None
 CLIENT_IP = "203.0.113.250"   # matches no ip4/a/mx in the corpus: pyspf evaluates every term
 SEED = 20261016
 
@@ -171,8 +172,42 @@ def chunks(s, n=250):
     return ",".join('"%s"' % s[i:i + n] for i in range(0, len(s), n))
 
 
+def free_dns_port():
+    """A port on 127.0.0.1 free right now for both UDP and TCP (dnsmasq binds both).
+
+    Never a fixed port: mutation testing runs this module in several processes at once (mutmut
+    --max-children). With a fixed port the second dnsmasq could not bind and that process's tests
+    queried the FIRST process's dnsmasq - another corpus (other DKIM keys) that could be torn down
+    mid-test - so mutants were killed or kept at random instead of by what the tool does."""
+    for _ in range(50):
+        u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        t = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            u.bind(("127.0.0.1", 0))
+            port = u.getsockname()[1]
+            t.bind(("127.0.0.1", port))
+            return port
+        except OSError:
+            continue
+        finally:
+            u.close()
+            t.close()
+    raise RuntimeError("no free UDP+TCP port on 127.0.0.1")
+
+
+def dnsmasq_lost_bind(proc, logpath):
+    """True when our dnsmasq exited because a parallel run took its port first (try another)."""
+    if proc.poll() is None:
+        return False
+    with open(logpath) as f:
+        log = f.read()
+    if "Address already in use" in log or "address in use" in log.lower():
+        return True
+    raise RuntimeError("dnsmasq exited with %s:\n%s" % (proc.returncode, log))
+
+
 def setUpModule():
-    global TMP, DNSMASQ, ROOTS, DKIM_REF
+    global TMP, DNSMASQ, ROOTS, DKIM_REF, PORT, RESOLVER
     TMP = tempfile.mkdtemp()
     recs, ROOTS = spf_corpus()
     for dom, rec in GOOD_DMARC.items():
@@ -188,25 +223,37 @@ def setUpModule():
             DKIM_REF[dom] = ref
             recs.append("txt-record=selector1._domainkey.%s,%s" % (dom, chunks("v=DKIM1; k=rsa; p=" + p)))
     conf = os.path.join(TMP, "dnsmasq.conf")
-    with open(conf, "w") as f:
-        f.write("\n".join(["port=%d" % PORT, "listen-address=127.0.0.1", "bind-interfaces", "no-resolv",
-                           "no-hosts", "local=/test/"] + recs) + "\n")
-    log = open(os.path.join(TMP, "dnsmasq.log"), "w")
-    DNSMASQ = subprocess.Popen([shutil.which("dnsmasq") or "/usr/sbin/dnsmasq", "-k", "--conf-file=" + conf],
-                               stdout=log, stderr=subprocess.STDOUT)
-    res = dns.resolver.Resolver(configure=False)
-    res.nameservers, res.port, res.lifetime = ["127.0.0.1"], PORT, 10
-    dns.resolver.default_resolver = res
-    for _ in range(100):
-        try:
-            res.resolve("l0.leaf.test", "TXT")
-            return
-        except Exception:
-            if DNSMASQ.poll() is not None:
+    logpath = os.path.join(TMP, "dnsmasq.log")
+    for _ in range(10):
+        PORT = free_dns_port()
+        RESOLVER = "127.0.0.1:%d" % PORT
+        with open(conf, "w") as f:
+            f.write("\n".join(["port=%d" % PORT, "listen-address=127.0.0.1", "bind-interfaces", "no-resolv",
+                               "no-hosts", "local=/test/"] + recs) + "\n")
+        log = open(logpath, "w")
+        DNSMASQ = subprocess.Popen([shutil.which("dnsmasq") or "/usr/sbin/dnsmasq", "-k", "--conf-file=" + conf],
+                                   stdout=log, stderr=subprocess.STDOUT)
+        res = dns.resolver.Resolver(configure=False)
+        res.nameservers, res.port, res.lifetime = ["127.0.0.1"], PORT, 10
+        dns.resolver.default_resolver = res
+        for _ in range(100):
+            if dnsmasq_lost_bind(DNSMASQ, logpath):
                 break
-            time.sleep(0.1)
-    with open(os.path.join(TMP, "dnsmasq.log")) as f:
-        raise RuntimeError("dnsmasq did not come up:\n" + f.read())
+            try:
+                res.resolve("l0.leaf.test", "TXT")
+            except Exception:
+                time.sleep(0.1)
+                continue
+            # answered: only OUR dnsmasq can hold the port if it is still alive (bind-interfaces
+            # makes a dnsmasq that lost the race exit at once)
+            time.sleep(0.2)
+            if not dnsmasq_lost_bind(DNSMASQ, logpath):
+                return
+            break
+        else:
+            with open(logpath) as f:
+                raise RuntimeError("dnsmasq did not come up:\n" + f.read())
+    raise RuntimeError("dnsmasq could not bind a port in 10 attempts")
 
 
 def tearDownModule():
