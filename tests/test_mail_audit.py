@@ -646,5 +646,93 @@ class TestSmtpStarttls(unittest.TestCase):
         self.assertNotIn("smtp", audit("smtp.test")[1])
 
 
+# --------------------------------------------------------------------------- pinned full results
+# Every domain of the zone must produce EXACTLY the pinned result (all sections, every finding's
+# severity and wording, counts, record contents, key sizes, lookup counts) and CLI exit code / text.
+# Mutation testing found each of these details unasserted.
+import re as _re
+
+from golden_mail_data import CLI, DOMAINS, EXPECTED, SMTP  # noqa: E402
+
+_KEY_RX = _re.compile(r"p=[A-Za-z0-9+/=]{8,}")
+
+
+def _norm(o):
+    """DKIM public keys are random per run: compare everything but their bytes."""
+    if isinstance(o, str):
+        return _KEY_RX.sub("p=<KEY>", o)
+    if isinstance(o, list):
+        return [_norm(x) for x in o]
+    if isinstance(o, dict):
+        return {k: _norm(v) for k, v in o.items()}
+    return o
+
+
+class TestGoldenResults(unittest.TestCase):
+    maxDiff = None
+
+
+def _domain_test(domain):
+    def t(self):
+        code, r = audit(domain)
+        r.pop("timestamp")
+        if domain != "big.test":  # its record is deterministic and its length proves the TCP retry
+            r = _norm(r)
+        self.assertEqual([code, r], EXPECTED[domain])
+    return t
+
+
+for _d in DOMAINS:
+    setattr(TestGoldenResults, "test_" + _d.replace(".test", ""), _domain_test(_d))
+
+
+class TestGoldenSmtpAndCli(unittest.TestCase):
+    maxDiff = None
+
+    def smtp(self, domain, port):
+        code, r = audit(domain, "--smtp", "--smtp-port", str(port))
+        r.pop("timestamp")
+        for s in r["smtp"]["servers"]:
+            if s.get("tls_version"):
+                s["tls_version"] = s["tls_version"][:5]
+        return [code, _norm(r)]
+
+    def test_starttls_ok(self):
+        self.assertEqual(self.smtp("smtp.test", SMTP_OK.port), SMTP["ok"])
+
+    def test_starttls_certificate_mismatch(self):
+        self.assertEqual(self.smtp("smtpbad.test", SMTP_OK.port), SMTP["bad"])
+
+    def test_no_starttls(self):
+        self.assertEqual(self.smtp("smtp.test", SMTP_PLAIN.port), SMTP["plain"])
+
+    def cli(self, *args):
+        p = run("--resolver", RESOLVER, *args)
+        return [p.returncode, p.stdout.replace(RESOLVER, "RESOLVER"), p.stderr]
+
+    def test_text_report_of_a_healthy_domain(self):
+        self.assertEqual([_norm(x) for x in self.cli("good.test")[:2]], CLI["text_good"])
+
+    def test_text_report_of_two_broken_domains(self):
+        self.assertEqual([_norm(x) for x in self.cli("overlimit.test", "stsbad.test")[:2]], CLI["text_bad"])
+
+    def test_exit_codes_for_every_fail_on_level(self):
+        doms = ("good.test", "overlimit.test", "dnone.test", "bimibad.test", "softfail.test")
+        for level in ("high", "medium", "low"):
+            self.assertEqual([self.cli("--fail-on", level, d)[0] for d in doms], CLI["fail_" + level][:5], level)
+        self.assertEqual([self.cli("--fail-on", "medium", "nothing.test")[0]], [CLI["fail_medium"][5]])
+        self.assertEqual([self.cli("--fail-on", "never", d)[0] for d in doms[:2]], CLI["fail_never"])
+        self.assertEqual([self.cli(d)[0] for d in ("good.test", "overlimit.test", "bimibad.test", "softfail.test")],
+                         CLI["default_fail"])
+
+    def test_trailing_dot_and_usage_error(self):
+        self.assertEqual(self.cli("--json", "good.test.")[0], CLI["trailing_dot"])
+        self.assertEqual(self.cli()[0], CLI["usage"])
+
+    def test_extra_selectors_are_tried_and_blank_ones_ignored(self):
+        out = json.loads(self.cli("--json", "--selectors", "custom2024, ,other", "sel.test")[1])[0]
+        self.assertEqual([f["selector"] for f in out["dkim"]["found"]], CLI["selectors"])
+
+
 if __name__ == "__main__":
     unittest.main()
