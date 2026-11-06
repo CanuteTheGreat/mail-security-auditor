@@ -29,7 +29,7 @@ jobs:
     # shared mutation/chaos lane (arch-independent, so x86 and arm64 slots on rw-man-01..05 since 2026-10-18,
     # ctg-infrastructure ci-runners/README.md); jobs that must stay on colo set CI_COLO_ONLY=1.
     runs-on: mutation-any
-    timeout-minutes: 150
+    timeout-minutes: 210  # 1520 sampled mutants ran 102-121 min on a quiet lane and passed 150 min on 2026-11-06 (run 51 killed by the timeout, not a test failure); the mutmut container lives 240 min
     steps:
       - uses: actions/checkout@v4
         with:
