@@ -46,7 +46,7 @@ CHILDREN=$(cat ci/mutation-children 2>/dev/null || echo 3)
 MEMORY=$(cat ci/mutation-memory 2>/dev/null || echo 3g)
 # Per-process data cap inside the container: an even share of it per mutmut process (CHILDREN
 # mutant runs + the fork server that forks them). A mutant that turns a loop into an endless
-# allocation grew one child to 4.8 GB in nginx-config-auditor's 5g container (2026-10-20, rw-man-03
+# allocation grew one child to 4.8 GB in mail-security-auditor's 5g container (2026-10-20, rw-man-03
 # kernel log 07:30-07:33 UTC); the cgroup OOM killer then took mutmut itself and the full run died
 # at mutant 1662/2119. With the cap that child gets MemoryError, its tests fail and the mutant
 # counts as caught (like a timeout); the rest of the run is unaffected. The clean test run (the
@@ -138,5 +138,18 @@ EOF
 if [ $rc = 0 ]; then
   mkdir -p .mutation-baseline
   docker cp "$NAME:/src/.mutation-baseline/$MUT_ID" .mutation-baseline/ 2>/dev/null || true
+  # Publish it to the shared store branch from the HOST: the gate ran inside the container, where
+  # GITHUB_ACTIONS / GITHUB_REF_NAME are unset, so its own store_push silently did nothing and the
+  # baseline stayed at 2026-10-22 (survivors: []) - every later incremental run then called all of the
+  # repo's known survivors NEW (mail-security-auditor run 54: 275 "new" survivors after a green 81.91 %
+  # full run) whenever the Actions cache had expired.
+  if [ -f ".mutation-baseline/$MUT_ID/baseline.json" ]; then
+    MUT_ID="$MUT_ID" python3 -c '
+import importlib.util, os
+spec = importlib.util.spec_from_file_location("mi", "ci/mutation-incremental.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.store_push(os.environ["MUT_ID"])
+' || true
+  fi
 fi
 exit $rc
