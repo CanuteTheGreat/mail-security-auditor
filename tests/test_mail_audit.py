@@ -296,7 +296,10 @@ def tearDownModule():
 
 
 def run(*args):
-    env = dict(os.environ, SSL_CERT_FILE=CERT)
+    # tests/nodns/sitecustomize.py: .test names never resolve through the OS search domains
+    nodns = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nodns")
+    env = dict(os.environ, SSL_CERT_FILE=CERT,
+               PYTHONPATH=os.pathsep.join(p for p in (nodns, os.environ.get("PYTHONPATH")) if p))
     return subprocess.run([sys.executable, TOOL, "--https-port", str(HTTPS.server_address[1])] + list(args),
                           capture_output=True, text=True, timeout=180, env=env)
 

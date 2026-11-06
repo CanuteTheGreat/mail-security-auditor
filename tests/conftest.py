@@ -26,6 +26,11 @@ import time
 import traceback
 import urllib.request
 
+# .test names never resolve through the OS search domains (tests/nodns/sitecustomize.py; the
+# subprocess runs get it through PYTHONPATH, the in-process mutmut runs here)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "nodns"))
+import sitecustomize  # noqa: E402,F401
+
 _REAL_RUN = subprocess.run
 _REAL_SLEEP = time.sleep
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
