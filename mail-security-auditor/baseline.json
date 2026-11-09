@@ -1,6 +1,6 @@
 {
  "id": "mail-security-auditor",
- "last_full": "2026-11-07",
+ "last_full": "2026-11-09",
  "sha": "1313b27a76190968fd0d74ffb178b30ccd1194d5",
  "survivors": [
   "mail_audit.x__mx_matches__mutmut_2",
