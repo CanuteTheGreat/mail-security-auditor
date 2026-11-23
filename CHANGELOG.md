@@ -2,6 +2,13 @@
 
 All notable changes. Versions are git tags; each tag has a Forgejo release with checksums.
 
+## 2.0.0 - 2026-11-23
+
+- Shared CLI contract across the Errant Solutions tools ([docs/CLI-CONTRACT.md](docs/CLI-CONTRACT.md)): exit 0 clean, 1 findings, 2 usage/input error, 3 unexpected runtime error (an uncaught exception used to be a traceback with exit 1). This tool only ever documented 0, 1 and 2, so there are no legacy codes; 3 is new (unexpected error, or no DNS resolver reachable).
+- New `--quiet` / `-q`: no stdout, exit code only (errors stay on stderr).
+- **Changed (breaking for `--json` consumers):** `--json` now prints one object `{"schema_version": 1, "tool", "version", "exit_code", "results": [...]}`; the previous top-level list is now the `results` value, unchanged. Major version bump for that reason.
+- The JSON Schema of the `--json` output is in `schema/`; contract tests (exit codes, JSON against the schema, quiet, stderr) run on every push, and the push trigger now covers every branch.
+
 ## 1.2.1 - 2026-10-19
 
 - HTML report: a clean domain's "None found" line is shown in green, no longer in red like a finding.

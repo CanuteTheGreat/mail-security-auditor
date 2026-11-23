@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mail-security-auditor --json output (schema_version 1)",
+  "type": "object",
+  "required": ["schema_version", "tool", "version", "exit_code", "results"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "tool": {"type": "string", "const": "mail-security-auditor"},
+    "version": {"type": "string"},
+    "exit_code": {"type": "integer", "enum": [0, 1]},
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["domain", "timestamp", "mx", "spf", "dmarc", "dkim", "bimi", "findings", "counts", "all_issues", "issue_count"],
+        "properties": {
+          "domain": {"type": "string"},
+          "timestamp": {"type": "string"},
+          "mx": {"type": "object"},
+          "spf": {"type": "object"},
+          "dmarc": {"type": "object"},
+          "dkim": {"type": "object"},
+          "bimi": {"type": "object"},
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["severity", "check", "message"],
+              "properties": {
+                "severity": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW", "INFO"]},
+                "check": {"type": "string"},
+                "message": {"type": "string"}
+              }
+            }
+          },
+          "counts": {"type": "object"},
+          "all_issues": {"type": "array", "items": {"type": "string"}},
+          "issue_count": {"type": "integer"}
+        }
+      }
+    }
+  }
+}

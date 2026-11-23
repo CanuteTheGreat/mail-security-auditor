@@ -20,7 +20,7 @@ straight to public resolvers 1.1.1.1 / 8.8.8.8 / 9.9.9.9).
 
 ```sh
 pipx install git+https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor.git        # latest release branch; puts `mail-security-auditor` on PATH
-pipx install git+https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor.git@v1.2.1  # a pinned release
+pipx install git+https://git.canutethegreat.com/CanuteTheGreat/mail-security-auditor.git@v2.0.0  # a pinned release
 brew install canutethegreat/errant-tools/mail-security-auditor   # after: brew tap canutethegreat/errant-tools https://git.canutethegreat.com/CanuteTheGreat/homebrew-errant-tools
 scoop install errant-tools/mail-security-auditor                 # after: scoop bucket add errant-tools https://git.canutethegreat.com/CanuteTheGreat/scoop-errant-tools
 ```
@@ -44,13 +44,23 @@ mail-security-auditor --smtp example.com                # also test STARTTLS on 
 mail-security-auditor --fail-on high example.com        # CI gate on HIGH only
 ```
 
-Exit codes (same convention as every Errant Solutions tool):
+Exit codes (the shared Errant Solutions CLI contract, see [docs/CLI-CONTRACT.md](docs/CLI-CONTRACT.md)):
 
 | Code | Meaning |
 |---|---|
 | 0 | no finding at or above `--fail-on` (default `medium`; `high`, `low`, `never` also accepted) |
 | 1 | at least one finding at or above `--fail-on` |
 | 2 | usage error |
+| 3 | unexpected runtime error, or no DNS resolver could be reached at all (message on stderr) |
+
+There are no legacy codes: this tool only ever documented 0, 1 and 2.
+
+`--json` prints one object with `schema_version` (currently 1), `tool`, `version`, `exit_code` and
+`results` (one entry per domain, the same objects 1.x printed as a top-level list); its JSON Schema is
+[schema/mail-security-auditor.schema.json](schema/mail-security-auditor.schema.json). Since 2.0.0 the top
+level is that object instead of a list, so JSON consumers must read `results`.
+`--quiet` (`-q`) prints nothing on stdout, so the exit code is the whole answer. Errors always go to
+stderr; `--html FILE` is still written under `--quiet`.
 
 ## What it checks
 

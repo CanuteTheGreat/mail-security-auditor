@@ -30,12 +30,14 @@ Usage:
   mail-security-auditor --html report.html example.com
   mail-security-auditor --fail-on high --smtp example.com
 
-Exit codes: 0 = no finding at or above --fail-on (default: medium),
-1 = at least one, 2 = usage error.
+Exit codes (shared Errant Solutions CLI contract): 0 = no finding at or above
+--fail-on (default: medium), 1 = at least one, 2 = usage error, 3 = unexpected
+runtime error or no DNS resolver reachable. --json prints one object
+(schema_version, tool, version, exit_code, results); --quiet prints nothing on stdout.
 
 License: MIT (c) 2026 Errant Solutions
 """
-__version__ = "1.2.1"
+__version__ = "2.0.0"
 
 import argparse
 import base64
@@ -209,7 +211,12 @@ def _recv_exact(sock, n):
     return b"".join(chunks)
 
 
+class ResolverUnreachable(Exception):
+    """Every configured DNS resolver failed on the network and none answered once (exit 3)."""
+
+
 _DEAD_SERVERS = set()
+_DNS_STATS = {"ok": 0, "err": 0}  # answers parsed / network errors, to tell "resolvers unreachable" from "no records"
 
 
 def dns_query(qname, qtype, servers=None):
@@ -217,7 +224,11 @@ def dns_query(qname, qtype, servers=None):
     # A resolver that timed out/refused once is skipped for the rest of the
     # run (unless every resolver is dead) -- otherwise one blocked resolver
     # costs a full TIMEOUT on each of the ~25 queries per domain.
-    live = [s for s in servers if s not in _DEAD_SERVERS] or list(servers)
+    live = [s for s in servers if s not in _DEAD_SERVERS]
+    if not live and not _DNS_STATS["ok"]:
+        # every resolver failed on the network and none ever answered: stop instead of timing out ~25 more times
+        raise ResolverUnreachable("no DNS resolver reachable (%s)" % ", ".join(servers))
+    live = live or list(servers)
     last_err = None
     for server in live:
         try:
@@ -228,6 +239,7 @@ def dns_query(qname, qtype, servers=None):
             resp_tid, rcode, truncated, results = parse_response(data, qtype)
             if resp_tid != tid:
                 continue
+            _DNS_STATS["ok"] += 1
             if truncated:
                 # UDP response didn't fit even with EDNS0 (or a resolver that
                 # ignores EDNS0 truncated it) -- retry reliably over TCP
@@ -247,6 +259,7 @@ def dns_query(qname, qtype, servers=None):
                 return results
         except (socket.timeout, OSError) as e:
             last_err = e
+            _DNS_STATS["err"] += 1
             _DEAD_SERVERS.add(server)
             continue
     if last_err:
@@ -962,15 +975,27 @@ td{padding:2px 10px 2px 0;font-size:0.9rem}
 
 
 def main(argv=None):
+    """Entry point. Any unexpected exception is a runtime error (exit 3), never a traceback exit 1."""
+    try:
+        return _main(argv)
+    except Exception as exc:  # SystemExit (argparse usage errors, exit 2) is not an Exception
+        print("mail-security-auditor: error: %s: %s" % (type(exc).__name__, exc), file=sys.stderr)
+        return 3
+
+
+def _main(argv=None):
     global HTTPS_PORT, SMTP_PORT
     ap = argparse.ArgumentParser(
         prog="mail-security-auditor",
         description="Email security auditor: SPF (incl. the 10-lookup limit), DKIM, DMARC, MX, MTA-STS, TLS-RPT, BIMI "
                     "and optional MX STARTTLS checks.",
-        epilog="Exit codes: 0 no finding at/above --fail-on, 1 at least one, 2 usage error.")
+        epilog="Exit codes: 0 no finding at/above --fail-on, 1 at least one, 2 usage error, "
+               "3 unexpected error or no DNS resolver reachable.")
     ap.add_argument("--version", action="version", version="%(prog)s " + __version__)
     ap.add_argument("domains", nargs="+", help="Domain(s) to audit")
     ap.add_argument("--json", action="store_true", help="Output JSON instead of text")
+    ap.add_argument("-q", "--quiet", action="store_true",
+                    help="print nothing on stdout; the exit code (and errors on stderr) are the result")
     ap.add_argument("--html", metavar="FILE", help="Write HTML report to FILE")
     ap.add_argument("--selectors", metavar="SEL", help="Comma-separated extra DKIM selectors to try")
     ap.add_argument("--resolver", metavar="IP[:PORT]", action="append",
@@ -993,23 +1018,32 @@ def main(argv=None):
         extra = [s.strip() for s in args.selectors.split(",") if s.strip()]
         selectors = list(dict.fromkeys(selectors + extra))
 
+    _DNS_STATS.update(ok=0, err=0)
+    _DEAD_SERVERS.clear()
     results = [audit_domain(domain.strip().rstrip("."), selectors, args.smtp) for domain in args.domains]
 
-    if args.json:
-        print(json.dumps(results, indent=2))
+    if args.fail_on == "never":
+        code = 0
     else:
-        for r in results:
-            print_report(r)
+        gate = RANK[args.fail_on.upper()]
+        code = 1 if any(worst(r) <= gate for r in results) else 0
 
     if args.html:
         with open(args.html, "w", encoding="utf-8") as f:
             f.write(render_html(results))
-        print("\nHTML report written to %s" % args.html)
-
-    if args.fail_on == "never":
-        return 0
-    gate = RANK[args.fail_on.upper()]
-    return 1 if any(worst(r) <= gate for r in results) else 0
+    if args.quiet:
+        return code
+    if args.json:
+        print(json.dumps({"schema_version": 1, "tool": "mail-security-auditor", "version": __version__,
+                          "exit_code": code, "results": results}, indent=2))
+        if args.html:
+            print("HTML report written to %s" % args.html, file=sys.stderr)
+    else:
+        for r in results:
+            print_report(r)
+        if args.html:
+            print("\nHTML report written to %s" % args.html)
+    return code
 
 
 if __name__ == "__main__":

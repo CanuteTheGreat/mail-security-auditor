@@ -46,7 +46,7 @@ def audit_many(domains, *extra):
     for i in range(0, len(domains), 40):
         p = run("--json", "--fail-on", "never", *(list(extra) + domains[i:i + 40]))
         assert p.returncode == 0, p.stderr
-        out += json.loads(p.stdout)
+        out += json.loads(p.stdout)["results"]
     return {r["domain"]: r for r in out}
 
 

@@ -275,7 +275,7 @@ def setUpModule():
             if dnsmasq_lost_bind(DNSMASQ, logpath):
                 break
             p = run("--resolver", RESOLVER, "--json", "good.test")
-            if p.returncode == 0 and json.loads(p.stdout)[0]["spf"]["present"]:
+            if p.returncode == 0 and json.loads(p.stdout)["results"][0]["spf"]["present"]:
                 # answered: only OUR dnsmasq can hold the port if it is still alive
                 time.sleep(0.2)
                 if not dnsmasq_lost_bind(DNSMASQ, logpath):
@@ -307,7 +307,7 @@ def run(*args):
 def audit(domain, *extra):
     p = run("--resolver", RESOLVER, "--json", *extra, domain)
     assert p.returncode in (0, 1), p.stderr
-    res = json.loads(p.stdout)
+    res = json.loads(p.stdout)["results"]
     return p.returncode, res[0]
 
 
@@ -468,12 +468,12 @@ class TestCli(unittest.TestCase):
         p = run("--resolver", "192.0.2.1", "--resolver", RESOLVER, "--json", "good.test")
         self.assertLess(time.time() - start, 20)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertTrue(json.loads(p.stdout)[0]["spf"]["present"])
+        self.assertTrue(json.loads(p.stdout)["results"][0]["spf"]["present"])
 
     def test_default_public_resolvers(self):
         # The default path: real public resolvers, real domain.
         p = run("--json", "gmail.com")
-        r = json.loads(p.stdout)[0]
+        r = json.loads(p.stdout)["results"][0]
         self.assertTrue(r["spf"]["present"], r)
         self.assertTrue(r["dmarc"]["present"], r)
         self.assertTrue(r["mx"]["records"], r)
@@ -481,7 +481,7 @@ class TestCli(unittest.TestCase):
     def test_help(self):
         p = run("--help")
         self.assertEqual(p.returncode, 0)
-        for opt in ("--json", "--html", "--selectors", "--resolver", "--smtp", "--fail-on"):
+        for opt in ("--json", "--quiet", "--html", "--selectors", "--resolver", "--smtp", "--fail-on"):
             self.assertIn(opt, p.stdout)
 
 
@@ -733,7 +733,7 @@ class TestGoldenSmtpAndCli(unittest.TestCase):
         self.assertEqual(self.cli()[0], CLI["usage"])
 
     def test_extra_selectors_are_tried_and_blank_ones_ignored(self):
-        out = json.loads(self.cli("--json", "--selectors", "custom2024, ,other", "sel.test")[1])[0]
+        out = json.loads(self.cli("--json", "--selectors", "custom2024, ,other", "sel.test")[1])["results"][0]
         self.assertEqual([f["selector"] for f in out["dkim"]["found"]], CLI["selectors"])
 
 

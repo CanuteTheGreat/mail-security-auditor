@@ -153,7 +153,8 @@
    "text": "mail-security-auditor --json example.com",
    "tests": [
     "tests/test_mail_audit.py::TestHealthyDomain::test_good_domain_has_no_issues",
-    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_permerror_verdicts_match"
+    "tests/test_accuracy.py::TestSpfAgainstPyspf::test_permerror_verdicts_match",
+    "tests/test_cli_contract.py::TestJson::test_clean"
    ],
    "flags": [
     "--json"
@@ -179,11 +180,17 @@
   },
   {
    "id": "exit-codes",
-   "text": "Exit codes (same convention as every Errant Solutions tool)",
+   "text": "Exit codes (the shared Errant Solutions CLI contract",
    "tests": [
     "tests/test_mail_audit.py::TestCli::test_fail_on_gates",
     "tests/test_mail_audit.py::TestDkimAndMx::test_missing_everything_fails_exit_code",
-    "tests/test_mail_audit.py::TestCli::test_help"
+    "tests/test_mail_audit.py::TestCli::test_help",
+    "tests/test_cli_contract.py::TestExitCodes::test_clean_is_0",
+    "tests/test_cli_contract.py::TestExitCodes::test_findings_is_1",
+    "tests/test_cli_contract.py::TestExitCodes::test_bad_args_is_2_with_message_on_stderr",
+    "tests/test_cli_contract.py::TestExitCodes::test_unreachable_resolver_is_3_with_stderr_message_and_empty_stdout",
+    "tests/test_cli_contract.py::TestExitCodes::test_unexpected_error_is_3_on_stderr_not_a_traceback_exit_1",
+    "tests/test_cli_contract.py::TestExitCodes::test_fail_on_never_is_0_even_with_findings"
    ],
    "flags": [
     "--fail-on"
@@ -241,6 +248,29 @@
    "tests": [
     ".forgejo/workflows/test.yml#python: [\"3.7\"",
     ".forgejo/workflows/nightly.yml#python: [\"3.7\""
+   ]
+  },
+  {
+   "id": "quiet",
+   "text": "`--quiet` (`-q`) prints nothing on stdout, so the exit code is the whole answer",
+   "tests": [
+    "tests/test_cli_contract.py::TestQuiet::test_quiet_prints_nothing_but_keeps_exit_code",
+    "tests/test_cli_contract.py::TestQuiet::test_quiet_still_writes_the_html_file_without_announcing_it",
+    "tests/test_cli_contract.py::TestQuiet::test_without_quiet_the_report_is_printed"
+   ],
+   "flags": [
+    "--quiet"
+   ]
+  },
+  {
+   "id": "json-schema",
+   "text": "`--json` prints one object with `schema_version` (currently 1)",
+   "tests": [
+    "tests/test_cli_contract.py::TestJson::test_clean",
+    "tests/test_cli_contract.py::TestJson::test_findings",
+    "tests/test_cli_contract.py::TestJson::test_results_is_one_entry_per_domain_in_order",
+    "tests/test_cli_contract.py::TestJson::test_usage_error_leaves_stdout_empty",
+    "tests/test_cli_contract.py::TestJson::test_schema_rejects_a_document_without_the_contract_keys"
    ]
   }
  ]
