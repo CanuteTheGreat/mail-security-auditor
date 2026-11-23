@@ -1,7 +1,7 @@
 {
  "id": "mail-security-auditor",
- "last_full": "2026-11-16",
- "sha": "f71fcd7020ddfc39f29dbefa4b9fc60882184c23",
+ "last_full": "2026-11-23",
+ "sha": "4571636a706a3bfdaffd64760066714af23e45ae",
  "survivors": [
   "mail_audit.x__mx_matches__mutmut_2",
   "mail_audit.x__mx_matches__mutmut_3",
